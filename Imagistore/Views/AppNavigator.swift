@@ -9,6 +9,7 @@ struct AppNavigator: View {
     @State var photosLibrary: PhotosLibrary?
     @State var applicationSettings = ApplicationSettings()
     @State var loaded = false
+    @State var goToPhotosLibrary = false
     @EnvironmentObject var sceneSettings: SceneSettings
 
     init() {
@@ -21,10 +22,12 @@ struct AppNavigator: View {
                 if let photosLibrary {
                     ContentView(photosLibrary: photosLibrary,
                                 photos: FetchRequest(sortDescriptors: [],
-                                        predicate: NSPredicate(format: "library = %@", photosLibrary)),
+                                                     predicate: NSPredicate(format: "libraryID = %@", photosLibrary.uuid as CVarArg)),
                                 albums: FetchRequest(sortDescriptors: [],
                                         predicate: NSPredicate(format: "library = %@", photosLibrary.uuid as CVarArg)),
-                                applicationSettings: $applicationSettings)
+                                miniatures: FetchRequest(sortDescriptors: [],
+                                        predicate: NSPredicate(format: "library = %@", photosLibrary.uuid as CVarArg)),
+                                goToPhotosLibrary: $goToPhotosLibrary, applicationSettings: $applicationSettings)
                 } else {
                     LibrariesSelectorView(applicationSettings: $applicationSettings, selectedLibrary: $photosLibrary)
                 }
@@ -35,6 +38,12 @@ struct AppNavigator: View {
             }
         }
         .alert(sceneSettings.errorAlertData, isPresented: $sceneSettings.isShowingErrorAlert) {}
+        .onChange(of: goToPhotosLibrary, perform: { _ in
+            if goToPhotosLibrary {
+                goToPhotosLibrary.toggle()
+                photosLibrary = nil
+            }
+        })
         .onAppear {
 //            applicationSettings.load()
 //            DispatchQueue.main.async {

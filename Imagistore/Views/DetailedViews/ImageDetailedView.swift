@@ -13,6 +13,7 @@ struct ImageDetailedView: View {
     var photos: [Photo]
     var photosResult: FetchedResults<Photo>
     var albums: FetchedResults<Album>
+    var miniatures: FetchedResults<Miniature>
 
     @Binding var photosSelector: PhotoStatus
     @Binding var selectedImage: UUID?
@@ -26,39 +27,29 @@ struct ImageDetailedView: View {
     var body: some View {
         NavigationStack {
             VStack {
-                #warning("Temporary fix for iOS 17 beta 2: dismiss() does not work in toolbar")
-                if #available(iOS 17, *) {
-                    HStack {
-                        Button {
-                            dismiss()
-                        } label: {
-                            HStack {
-                                Image(systemName: "chevron.backward")
-                                Text("Back")
-                            }
-                        }
-                        Spacer()
-                    }
-                }
                 VStack {
                     TabView(selection: $selectedImage) {
                         ForEach(photos, id: \.uuid) { item in
                             VStack {
-                                if let uuid = item.uuid, let miniature = item.miniature {
-                                    if fileExistsAtPath(imageFileURL(uuid, libraryID: item.library.uuid).path) {
-                                        Image(uiImage: readImageFromFile(item) ?? UIImage(data: miniature) ??
-                                              UIImage(systemName: "photo.on.rectangle.angled")!)
+                                if let uuid = item.uuid, 
+                                    let miniature = miniatures
+                                    .first(where: { $0.uuid == uuid })?.miniature {
+                                    if item.uuid == selectedImage! {
+                                        if fileExistsAtPath(imageFileURL(uuid, fileExtension: item.fileExtension!, libraryID: item.libraryID).path) ||
+                                            fileExistsAtPath(imageFileURL(uuid, fileExtension: "heic", libraryID: item.libraryID).path) {
+                                            Image(uiImage: readImageFromFile(item) ?? UIImage(data: miniature) ??
+                                                  UIImage(systemName: "photo.on.rectangle.angled")!)
                                             .resizable()
                                             .scaledToFit()
                                             .pinchToZoom()
-                                    } else if let uiImage = tempFullsizeImages[uuid] {
-                                        Image(uiImage: uiImage)
-                                            .resizable()
-                                            .scaledToFit()
-                                            .pinchToZoom()
-                                    } else {
-                                        Image(uiImage: UIImage(data: miniature) ??
-                                                UIImage(systemName: "photo.on.rectangle.angled")!)
+                                        } else if let uiImage = tempFullsizeImages[uuid] {
+                                            Image(uiImage: uiImage)
+                                                .resizable()
+                                                .scaledToFit()
+                                                .pinchToZoom()
+                                        } else {
+                                            Image(uiImage: UIImage(data: miniature) ??
+                                                  UIImage(systemName: "photo.on.rectangle.angled")!)
                                             .resizable()
                                             .scaledToFit()
                                             .onAppear {
@@ -71,6 +62,12 @@ struct ImageDetailedView: View {
                                                     }
                                                 }
                                             }
+                                        }
+                                    } else {
+                                        Image(uiImage: UIImage(data: miniature) ??
+                                              UIImage(systemName: "photo.on.rectangle.angled")!)
+                                        .resizable()
+                                        .scaledToFit()
                                     }
                                 }
                             }
@@ -87,7 +84,7 @@ struct ImageDetailedView: View {
                             LazyHStack(spacing: 2) {
                                 ForEach(photos, id: \.uuid) { item in
                                     if let uuid = item.uuid {
-                                        if let data = item.miniature, let uiImage = UIImage(data: data) {
+                                        if let data = miniatures.first(where: {$0.uuid == uuid})?.miniature, let uiImage = UIImage(data: data) {
                                             Button {
                                                 self.selectedImage = uuid
                                                 scrollTo = selectedImage
@@ -125,20 +122,15 @@ struct ImageDetailedView: View {
                 }
             }
             .toolbar {
-            #warning("Temporary fix for iOS 17 beta 2: dismiss() does not work in toolbar")
-                if #unavailable(iOS 17) {
-                    ToolbarItem(placement: .navigationBarLeading) {
-                        HStack {
-                            Button {
-                                dismiss()
-                            } label: {
-                                HStack {
-                                    Image(systemName: "chevron.backward")
-                                    Text("Back")
-                                }
-                            }
-                            Spacer()
+
+                ToolbarItem(placement: .navigationBarLeading) {
+                    HStack {
+                        Button {
+                            dismiss()
+                        } label: {
+                            Image(systemName: "chevron.backward")
                         }
+                        Spacer()
                     }
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
@@ -194,13 +186,13 @@ struct ImageDetailedView: View {
             }
             .padding(.vertical, 10)
             .sheet(isPresented: $isPresentingAddToAlbum) {
-                AddToAlbumView(photos: photosResult, albums: albums,
+                AddToAlbumView(photos: photosResult, albums: albums, miniatures: miniatures,
                                isPresentingAddToAlbum: $isPresentingAddToAlbum, selectingMode: .constant(true),
                                selectedImagesArray: .constant([]), selectedImage: selectedImage)
             }
             .sheet(isPresented: $isPresentingEditTags, content: {
                 if let selectedImage {
-                    EditTagsView(selectedImages: [selectedImage], photos: photosResult, isChanged: .constant(false))
+                    EditTagsView(selectedImages: [selectedImage], photos: photosResult, library: library, isChanged: .constant(false))
                 }
             })
             .confirmationDialog("Delete this photo", isPresented: $isPresentingConfirm) {

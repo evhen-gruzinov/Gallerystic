@@ -23,15 +23,15 @@ extension Photo {
     }
 
     @NSManaged public var uuid: UUID?
-    @NSManaged public var library: PhotosLibrary
+    @NSManaged public var libraryID: UUID
     @NSManaged public var status: String
     @NSManaged public var creationDate: Date
     @NSManaged public var importDate: Date
+    @NSManaged public var lastChange: Date?
     @NSManaged public var deletionDate: Date?
     @NSManaged public var fileExtension: String?
-    @NSManaged public var miniature: Data?
     @NSManaged public var fullsizeCloudID: String?
-    @NSManaged public var keywords: [String]?
+    @NSManaged public var keywordsJSON: String?
 
 }
 
@@ -64,3 +64,45 @@ func sortedPhotos(_ photos: FetchedResults<Photo>, by byArgument: PhotosSortArgu
             }
         })
     }
+
+func JSONToSet(_ input: String?) -> Set<String>? {
+    if let input {
+        do {
+            let jsonData = input.data(using: .utf8)!
+            return try JSONDecoder().decode(Set<String>.self, from: jsonData)
+        } catch {
+            print(error)
+            return Set<String>()
+        }
+    } else { return nil }
+}
+func setToJSON(_ input: Set<String>) -> String? {
+    do {
+        let jsonData = try JSONEncoder().encode(input)
+        return String(data: jsonData, encoding: .utf8)
+    } catch {
+        print(error)
+        return nil
+    }
+}
+
+func JSONToArray(_ input: String?) -> Array<String>? {
+    if let input {
+        do {
+            let jsonData = input.data(using: .utf8)!
+            return try JSONDecoder().decode(Array<String>.self, from: jsonData)
+        } catch {
+            print(error)
+            return Array<String>()
+        }
+    } else { return nil }
+}
+func arrayToJSON(_ input: Array<String>) -> String? {
+    do {
+        let jsonData = try JSONEncoder().encode(input)
+        return String(data: jsonData, encoding: .utf8)
+    } catch {
+        print(error)
+        return nil
+    }
+}

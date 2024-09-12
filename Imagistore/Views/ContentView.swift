@@ -3,6 +3,7 @@
 //
 
 import SwiftUI
+import CloudKit
 import CoreData
 
 struct ContentView: View {
@@ -11,10 +12,12 @@ struct ContentView: View {
     @Environment(\.managedObjectContext) private var viewContext
     @FetchRequest var photos: FetchedResults<Photo>
     @FetchRequest var albums: FetchedResults<Album>
+    @FetchRequest var miniatures: FetchedResults<Miniature>
 
     @State var sortingArgument: PhotosSortArgument = .importDateDesc
     @State var selectedTab: Tab = .library
     @State var navToRoot: Bool = false
+    @Binding var goToPhotosLibrary: Bool
     @State var viewLoaded: Bool = false
 
     @Binding var applicationSettings: ApplicationSettings
@@ -32,12 +35,14 @@ struct ContentView: View {
             VStack {
                 TabView(selection: handler) {
                     GallerySceneView(library: photosLibrary, photos: photos, albums: albums,
-                                     sortingArgument: $sortingArgument,
+                                     miniatures: miniatures, sortingArgument: $sortingArgument,
                                      navToRoot: $navToRoot, photosSelector: .normal, isMainLibraryScreen: true)
                     .tag(Tab.library)
                     AlbumsSceneView(library: photosLibrary, photos: photos, albums: albums,
-                                    sortingArgument: $sortingArgument, navToRoot: $navToRoot)
+                                    miniatures: miniatures, sortingArgument: $sortingArgument, navToRoot: $navToRoot)
                     .tag(Tab.albums)
+                    SettingsSceneView(goToPhotosLibrary: $goToPhotosLibrary)
+                    .tag(Tab.settings)
                 }
                 .overlay(alignment: .bottom) {
                     CustomTabBar(selection: handler)

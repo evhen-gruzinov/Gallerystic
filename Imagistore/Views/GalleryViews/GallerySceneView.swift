@@ -13,6 +13,7 @@ struct GallerySceneView: View {
     @StateObject var library: PhotosLibrary
     var photos: FetchedResults<Photo>
     var albums: FetchedResults<Album>
+    var miniatures: FetchedResults<Miniature>
     @State var currentAlbum: Album?
 
     @Binding var sortingArgument: PhotosSortArgument
@@ -36,32 +37,11 @@ struct GallerySceneView: View {
     var body: some View {
         NavigationStack {
             VStack {
-                #warning("Temporary fix for iOS 17: PhotosPicker does not work in toolbar")
-                if #available(iOS 17, *) {
-                    if isMainLibraryScreen {
-                        HStack {
-                            PhotosPicker(
-                                selection: $importSelectedItems,
-                                matching: .images,
-                                photoLibrary: .shared()
-                            ) {
-                                Label("Import", systemImage: "plus")
-                            }
-                            .onChange(of: importSelectedItems) { _ in
-                                if importSelectedItems.count > 0 {
-                                    importFromPhotosApp()
-                                }
-                            }
-                            Spacer()
-                        }
-                        .padding(.horizontal, 10)
-                    }
-                }
-
                 UIGalleryView(
                     library: library,
                     photos: photos,
                     albums: albums,
+                    miniatures: miniatures,
                     currentAlbum: currentAlbum,
                     photosSelector: photosSelector,
                     sortingArgument: $sortingArgument,
@@ -110,27 +90,24 @@ struct GallerySceneView: View {
             .toolbar {
                 if isMainLibraryScreen, !selectingMode {
                     ToolbarItemGroup(placement: .navigationBarLeading) {
-                        #warning("Temporary fix for iOS 17: PhotosPicker does not work in toolbar")
-                        if #unavailable(iOS 17) {
-                            PhotosPicker(
-                                selection: $importSelectedItems,
-                                matching: .images,
-                                photoLibrary: .shared()
-                            ) {
-                                Image(systemName: "plus")
-                            }
-                            .onChange(of: importSelectedItems) { _ in
-                                if importSelectedItems.count > 0 {
-                                    importFromPhotosApp()
-                                }
+                        PhotosPicker(
+                            selection: $importSelectedItems,
+                            matching: .images,
+                            photoLibrary: .shared()
+                        ) {
+                            Image(systemName: "plus")
+                        }
+                        .onChange(of: importSelectedItems) { _ in
+                            if importSelectedItems.count > 0 {
+                                importFromPhotosApp()
                             }
                         }
 
                         if syncArr.count > 0 {
                             withAnimation {
-                                HStack {
-                                    Image(systemName: "arrow.clockwise.icloud.fill")
+                                HStack(spacing: 5) {
                                     Text("\(syncArr.count) in sync").font(.caption).bold()
+                                    ProgressView()
                                 }
                             }
                         }
@@ -198,15 +175,16 @@ struct GallerySceneView: View {
                             Button { isPresentingDeletePhotos.toggle() } label: {
                                 Image(systemName: "trash")
                             }
-                                .disabled(selectedImagesArray.count == 0)
+                            .disabled(selectedImagesArray.count == 0)
                             Menu {
-                                if currentAlbum != nil, currentAlbum?.filterOptions == nil {
+                                if currentAlbum != nil, currentAlbum?.filterOptionsSet == nil {
                                     Button {
                                         withAnimation {
                                             selectedImagesArray.forEach { img in
-                                                if let uuid = img.uuid,
-                                                   let index = currentAlbum?.photos.firstIndex(of: uuid) {
-                                                    currentAlbum?.photos.remove(at: index)
+                                                if let uuid = img.uuid, let set = JSONToSet(currentAlbum?.photosSet) {
+                                                    var currentSet = set
+                                                    currentSet.remove(uuid.uuidString)
+                                                    currentAlbum?.photosSet = setToJSON(currentSet)!
                                                 }
                                             }
                                         }
@@ -248,19 +226,20 @@ struct GallerySceneView: View {
             }
 
             .sheet(isPresented: $isPresentingAddToAlbum) {
-                AddToAlbumView(photos: photos, albums: albums, isPresentingAddToAlbum: $isPresentingAddToAlbum,
-                        selectingMode: $selectingMode, selectedImagesArray: $selectedImagesArray)
+                AddToAlbumView(photos: photos, albums: albums, miniatures: miniatures, isPresentingAddToAlbum: $isPresentingAddToAlbum,
+                               selectingMode: $selectingMode, selectedImagesArray: $selectedImagesArray)
             }
             .sheet(isPresented: $isPresentingEditTags, onDismiss: {
                 if isPhotosChanged {
                     selectedImagesArray = []
                     selectingMode = false
                     isPhotosChanged = false
+                    sceneSettings.isShowingTabBar.toggle()
                 }
             }, content: {
                 if selectedImagesArray.count > 0 {
                     EditTagsView(selectedImages: selectedImagesArray.map { $0.uuid! },
-                                 photos: photos, isChanged: $isPhotosChanged)
+                                 photos: photos, library: library, isChanged: $isPhotosChanged)
                 }
             })
         }
@@ -339,23 +318,27 @@ struct GallerySceneView: View {
                             }
                         } else { creationDate = Date() }
 
-                        let fileExtension = item.supportedContentTypes.first?.preferredFilenameExtension
+                        let fileExtension: String = item.supportedContentTypes.first?.preferredFilenameExtension ?? "heic"
                         let uuid = UUID()
                         let data = generateMiniatureData(uiImage)
 
-                        if writeImageToFile(uuid, uiImage: uiImage, library: library) {
+                        if writeImageToFile(uuid, uiImage: uiImage, fileExtension: fileExtension, library: library.uuid) {
                             let newPhoto = Photo(context: viewContext)
                             newPhoto.uuid = uuid
-                            newPhoto.library = library
+                            newPhoto.libraryID = library.uuid
                             newPhoto.status = PhotoStatus.normal.rawValue
                             newPhoto.creationDate = creationDate
                             newPhoto.importDate = Date()
                             newPhoto.deletionDate = nil
                             newPhoto.fileExtension = fileExtension
-                            newPhoto.miniature = data
-                            library.addToPhotos(newPhoto)
+                            library.photosIDs.append(uuid)
 
-                            let imageAsset = CKAsset(fileURL: imageFileURL(uuid, libraryID: library.uuid))
+                            let newMiniature = Miniature(context: viewContext)
+                            newMiniature.uuid = uuid
+                            newMiniature.miniature = data
+
+                            let imageAsset = CKAsset(fileURL: imageFileURL(uuid,
+                                                    fileExtension: fileExtension, libraryID: library.uuid))
 
                             let photoCloudRecord = CKRecord(recordType: "FullSizePhotos")
                             photoCloudRecord["library"] = library.uuid.uuidString as CKRecordValue
@@ -365,16 +348,15 @@ struct GallerySceneView: View {
                             syncArr.append(uuid)
                             cloudRecords.append(photoCloudRecord)
 
-//                            do {
-//                                try viewContext.save()
-//                            } catch {
-//                                sceneSettings.errorAlertData = error.localizedDescription
-//                                sceneSettings.isShowingErrorAlert.toggle()
-//                            }
-
-                            count+=1
-                            lastUUID = uuid
+                            //                            do {
+                            //                                try viewContext.save()
+                            //                            } catch {
+                            //                                sceneSettings.errorAlertData = error.localizedDescription
+                            //                                sceneSettings.isShowingErrorAlert.toggle()
+                            //                            }
                         }
+                        lastUUID = uuid
+                        count+=1
                     }
                 }
             }
@@ -413,7 +395,7 @@ struct GallerySceneView: View {
                         debugPrint(error)
                     } else {
                         if let index = syncArr.firstIndex(
-                                where: { $0.uuidString == record?.value(forKey: "photo") as? String}
+                            where: { $0.uuidString == record?.value(forKey: "photo") as? String}
                         ) {
                             syncArr.remove(at: index)
                         }
